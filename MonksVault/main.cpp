@@ -42,6 +42,9 @@ int g_nAppCount = sizeof(g_Apps) / sizeof(g_Apps[0]);
 
 int g_nSelectedApp = 0;  // 当前选中项
 
+static HMENU g_hHelpMenu = NULL;      // 帮助菜单句柄
+static int   g_nHelpMenuIndex = -1;    // 帮助菜单在主菜单中的索引
+
 						 // 函数声明
 BOOL LoadStringEx(UINT uID, LPWSTR lpBuffer, int cchBufferMax, LANGID langId);
 void RefreshUI(HWND hWnd);
@@ -175,6 +178,27 @@ void SetLanguage(HWND hWnd, LANGID newLangId)
 	if (newLangId == g_CurrentLangID)
 		return;
 	g_CurrentLangID = newLangId;
+
+	if (g_hHelpMenu != NULL && g_nHelpMenuIndex != -1)
+	{
+		WCHAR szBuf[64];
+		HMENU hMenu = GetMenu(hWnd);
+
+		// 更新帮助主菜单标题
+		LoadStringEx(IDS_HELP_MENU, szBuf, 64, g_CurrentLangID);
+		MENUITEMINFOW mii = { sizeof(mii) };
+		mii.fMask = MIIM_STRING;
+		mii.dwTypeData = szBuf;
+		SetMenuItemInfoW(hMenu, g_nHelpMenuIndex, TRUE, &mii);
+
+		// 更新“关于”子项
+		LoadStringEx(IDS_HELP_ABOUT, szBuf, 64, g_CurrentLangID);
+		mii.dwTypeData = szBuf;
+		SetMenuItemInfoW(g_hHelpMenu, IDM_HELP_ABOUT, FALSE, &mii);
+
+		DrawMenuBar(hWnd);
+	}
+
 	RefreshUI(hWnd);
 }
 
@@ -247,7 +271,7 @@ void SaveCurrentItem(HWND hWnd)
 
 	// 构建过滤器：描述1\0模式1\0描述2\0模式2\0\0
 	WCHAR szFilterBuffer[256] = { 0 };
-	wchar_t* p = szFilterBuffer;
+	WCHAR* p = szFilterBuffer;
 
 	// 复制可执行文件描述
 	wcscpy(p, szExecDesc);
@@ -321,6 +345,184 @@ void InstallCurrentItem(HWND hWnd)
 	}
 }
 
+// 关于对话框过程
+INT_PTR CALLBACK AboutDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
+{
+	static HWND hTab, hInfoStatic, hQQ1, hQQ2, hQQ3, hLinkGit, hLinkBili;
+	static HWND hWechatImg, hAlipayImg, hPaypalText;
+	static int nCurPage = 0;
+
+	switch (message)
+	{
+	case WM_INITDIALOG:
+	{
+		// 获取控件句柄
+		hTab = GetDlgItem(hDlg, IDC_TAB);
+		hInfoStatic = GetDlgItem(hDlg, IDC_STATIC_INFO);
+		hQQ1 = GetDlgItem(hDlg, IDC_EDIT_QQ1);
+		hQQ2 = GetDlgItem(hDlg, IDC_EDIT_QQ2);
+		hQQ3 = GetDlgItem(hDlg, IDC_EDIT_QQ3);
+		hLinkGit = GetDlgItem(hDlg, IDC_LINK_GITHUB);
+		hLinkBili = GetDlgItem(hDlg, IDC_LINK_BILIBILI);
+		hWechatImg = GetDlgItem(hDlg, IDC_STATIC_WECHAT_IMG);
+		hAlipayImg = GetDlgItem(hDlg, IDC_STATIC_ALIPAY_IMG);
+		hPaypalText = GetDlgItem(hDlg, IDC_STATIC_PAYPAL_TEXT);
+
+		WCHAR szBuf[256];
+
+		// 设置对话框标题
+		LoadStringEx(IDS_ABOUT_TITLE, szBuf, 256, g_CurrentLangID);
+		SetWindowTextW(hDlg, szBuf);
+
+		// 添加Tab页
+		TCITEMW tie = { 0 };
+		tie.mask = TCIF_TEXT;
+
+		LoadStringEx(IDS_ABOUT_TAB_INFO, szBuf, 256, g_CurrentLangID);
+		tie.pszText = szBuf;
+		TabCtrl_InsertItem(hTab, 0, &tie);
+
+		LoadStringEx(IDS_ABOUT_TAB_WECHAT, szBuf, 256, g_CurrentLangID);
+		tie.pszText = szBuf;
+		TabCtrl_InsertItem(hTab, 1, &tie);
+
+		LoadStringEx(IDS_ABOUT_TAB_ALIPAY, szBuf, 256, g_CurrentLangID);
+		tie.pszText = szBuf;
+		TabCtrl_InsertItem(hTab, 2, &tie);
+
+		LoadStringEx(IDS_ABOUT_TAB_PAYPAL, szBuf, 256, g_CurrentLangID);
+		tie.pszText = szBuf;
+		TabCtrl_InsertItem(hTab, 3, &tie);
+
+		// 设置信息页内容
+		// 版本
+		LoadStringEx(IDS_ABOUT_VERSION, szBuf, 256, g_CurrentLangID);
+		SetWindowTextW(hInfoStatic, szBuf);
+
+		// QQ群
+		WCHAR szQQPrefix[64];
+		LoadStringEx(IDS_ABOUT_QQ, szQQPrefix, 64, g_CurrentLangID);
+		if (lstrlenW(szQQPrefix) == 0) wcscpy_s(szQQPrefix, L"QQ");
+
+		WCHAR szQQ[128];
+		wsprintfW(szQQ, L"%s: 131182440", szQQPrefix);
+		SetWindowTextW(hQQ1, szQQ);
+		wsprintfW(szQQ, L"%s: 5669743", szQQPrefix);
+		SetWindowTextW(hQQ2, szQQ);
+		wsprintfW(szQQ, L"%s: 777846820", szQQPrefix);
+		SetWindowTextW(hQQ3, szQQ);
+
+		// 链接
+		LoadStringEx(IDS_ABOUT_GITHUB, szBuf, 256, g_CurrentLangID);
+		SetWindowTextW(hLinkGit, szBuf);
+		LoadStringEx(IDS_ABOUT_BILIBILI, szBuf, 256, g_CurrentLangID);
+		SetWindowTextW(hLinkBili, szBuf);
+
+		// 加载微信支付图片
+		HBITMAP hBmpWechat = (HBITMAP)LoadImageW(g_hInst, MAKEINTRESOURCEW(IDB_WECHAT_PAY),
+			IMAGE_BITMAP, 0, 0, LR_DEFAULTCOLOR);
+		if (hBmpWechat)
+			SendMessageW(hWechatImg, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM)hBmpWechat);
+
+		// 加载支付宝图片
+		HBITMAP hBmpAlipay = (HBITMAP)LoadImageW(g_hInst, MAKEINTRESOURCEW(IDB_ALIPAY),
+			IMAGE_BITMAP, 0, 0, LR_DEFAULTCOLOR);
+		if (hBmpAlipay)
+			SendMessageW(hAlipayImg, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM)hBmpAlipay);
+
+		// 设置PayPal账户文本
+		LoadStringEx(IDS_PAYPAL_ACCOUNT, szBuf, 256, g_CurrentLangID);
+		SetWindowTextW(hPaypalText, szBuf);
+
+		// 默认显示第一页（信息页），隐藏支付页面控件
+		ShowWindow(hInfoStatic, SW_SHOW);
+		ShowWindow(hQQ1, SW_SHOW);
+		ShowWindow(hQQ2, SW_SHOW);
+		ShowWindow(hQQ3, SW_SHOW);
+		ShowWindow(hLinkGit, SW_SHOW);
+		ShowWindow(hLinkBili, SW_SHOW);
+		ShowWindow(hWechatImg, SW_HIDE);
+		ShowWindow(hAlipayImg, SW_HIDE);
+		ShowWindow(hPaypalText, SW_HIDE);
+
+		return (INT_PTR)TRUE;
+	}
+
+	case WM_NOTIFY:
+	{
+		if (((LPNMHDR)lParam)->idFrom == IDC_TAB && ((LPNMHDR)lParam)->code == TCN_SELCHANGE)
+		{
+			int sel = TabCtrl_GetCurSel(hTab);
+			// 隐藏所有页面控件
+			ShowWindow(hInfoStatic, SW_HIDE);
+			ShowWindow(hQQ1, SW_HIDE);
+			ShowWindow(hQQ2, SW_HIDE);
+			ShowWindow(hQQ3, SW_HIDE);
+			ShowWindow(hLinkGit, SW_HIDE);
+			ShowWindow(hLinkBili, SW_HIDE);
+			ShowWindow(hWechatImg, SW_HIDE);
+			ShowWindow(hAlipayImg, SW_HIDE);
+			ShowWindow(hPaypalText, SW_HIDE);
+
+			// 显示选中页
+			switch (sel)
+			{
+			case 0: // Info
+				ShowWindow(hInfoStatic, SW_SHOW);
+				ShowWindow(hQQ1, SW_SHOW);
+				ShowWindow(hQQ2, SW_SHOW);
+				ShowWindow(hQQ3, SW_SHOW);
+				ShowWindow(hLinkGit, SW_SHOW);
+				ShowWindow(hLinkBili, SW_SHOW);
+				break;
+			case 1: // WeChat
+				ShowWindow(hWechatImg, SW_SHOW);
+				break;
+			case 2: // Alipay
+				ShowWindow(hAlipayImg, SW_SHOW);
+				break;
+			case 3: // PayPal
+				ShowWindow(hPaypalText, SW_SHOW);
+				break;
+			}
+			return TRUE;
+		}
+		break;
+	}
+
+	case WM_COMMAND:
+		if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL)
+		{
+			EndDialog(hDlg, LOWORD(wParam));
+			return (INT_PTR)TRUE;
+		}
+		else if (HIWORD(wParam) == STN_CLICKED)
+		{
+			// 处理链接点击
+			if ((HWND)lParam == hLinkGit)
+			{
+				ShellExecuteW(hDlg, L"open", L"https://github.com/xuyun018/", NULL, NULL, SW_SHOW);
+			}
+			else if ((HWND)lParam == hLinkBili)
+			{
+				ShellExecuteW(hDlg, L"open", L"https://space.bilibili.com/473687944", NULL, NULL, SW_SHOW);
+			}
+		}
+		break;
+
+	case WM_DESTROY:
+		// 删除图片资源（可选）
+	{
+		HBITMAP hBmp = (HBITMAP)SendMessageW(hWechatImg, STM_GETIMAGE, IMAGE_BITMAP, 0);
+		if (hBmp) DeleteObject(hBmp);
+		hBmp = (HBITMAP)SendMessageW(hAlipayImg, STM_GETIMAGE, IMAGE_BITMAP, 0);
+		if (hBmp) DeleteObject(hBmp);
+	}
+	break;
+	}
+	return (INT_PTR)FALSE;
+}
+
 // 窗口过程
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -374,6 +576,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		// 创建菜单
 		HMENU hMenu = CreateMenu();
 		HMENU hLangMenu = CreatePopupMenu();
+		HMENU hHelpMenu = CreatePopupMenu();
 		WCHAR szBuf[64];
 
 		LoadStringEx(IDS_LANG_ENGLISH, szBuf, 64, LANGID_ENGLISH);
@@ -389,6 +592,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 		LoadStringEx(IDS_MENU_LANGUAGE, szBuf, 64, g_CurrentLangID);
 		AppendMenuW(hMenu, MF_POPUP, (UINT_PTR)hLangMenu, szBuf);
+
+		LoadStringEx(IDS_HELP_ABOUT, szBuf, 64, g_CurrentLangID);
+		AppendMenuW(hHelpMenu, MF_STRING, IDM_HELP_ABOUT, szBuf);
+
+		g_hHelpMenu = hHelpMenu;
+		// 获取当前主菜单项数量（新菜单将加在末尾）
+		g_nHelpMenuIndex = GetMenuItemCount(hMenu);
+
+		// 加载帮助主菜单标题并添加到主菜单
+		LoadStringEx(IDS_HELP_MENU, szBuf, 64, g_CurrentLangID);
+		AppendMenuW(hMenu, MF_POPUP, (UINT_PTR)hHelpMenu, szBuf);
+
 		SetMenu(hWnd, hMenu);
 
 		// 初始化界面
@@ -490,6 +705,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				break;
 			case IDM_LANG_KOREAN:
 				SetLanguage(hWnd, LANGID_KOREAN);
+				break;
+			case IDM_HELP_ABOUT:
+				DialogBoxW(g_hInst, MAKEINTRESOURCEW(IDD_ABOUT), hWnd, AboutDlgProc);
+				break;
+			default:
 				break;
 			}
 		}
